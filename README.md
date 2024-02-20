@@ -15,7 +15,7 @@ If you found the content useful and want to support my work, you can buy me a co
 This module can be installed from github repo
 
 ```sh
-pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
+pip install --upgrade --no-cache-dir git+https://github.com/thismad/tvdatafeed
 ```
 
 For usage instructions, watch these videos-
@@ -37,7 +37,7 @@ Version 2.0.0 is a major release and is not backward compatible. make sure you u
 ## Usage
 
 Import the packages and initialize with your tradingview username and password.
-
+To bypass 2FA, log in manually and pull the auth_token from the signin request.
 ```python
 from tvDatafeed import TvDatafeed, Interval
 
@@ -45,6 +45,9 @@ username = 'YourTradingViewUsername'
 password = 'YourTradingViewPassword'
 
 tv = TvDatafeed(username, password)
+
+# And for 2FA bypass use
+tv=TvDatafeed(auth_token="your_auth_token")
 ```
 
 You may use without logging in, but in some cases tradingview may limit the symbols and some symbols might not be available.

@@ -40,6 +40,7 @@ class TvDatafeed:
         self,
         username: str = None,
         password: str = None,
+        auth_token: str = None
     ) -> None:
         """Create TvDatafeed object
 
@@ -49,8 +50,10 @@ class TvDatafeed:
         """
 
         self.ws_debug = False
-
-        self.token = self.__auth(username, password)
+        if auth_token is not None:
+            self.token = auth_token
+        else:
+            self.token = self.__auth(username, password)
 
         if self.token is None:
             self.token = "unauthorized_user_token"
@@ -307,13 +310,14 @@ class TvDatafeed:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     tv = TvDatafeed()
-    print(tv.get_hist("CRUDEOIL", "MCX", fut_contract=1))
+
+    print(tv.get_hist("XAUUSD", "OANDA", fut_contract=1))
     print(tv.get_hist("NIFTY", "NSE", fut_contract=1))
     print(
         tv.get_hist(
-            "EICHERMOT",
-            "NSE",
-            interval=Interval.in_1_hour,
+            "XAUUSD",
+            "OANDA",
+            interval=Interval.in_daily,
             n_bars=500,
             extended_session=False,
         )

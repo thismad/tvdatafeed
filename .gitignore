@@ -7,7 +7,7 @@ build
 *.egg-info/
 *.egg
 MANIFEST
-
+.idea/
 .ipynb_checkpoints
 *.pyc
 __pycache__/
