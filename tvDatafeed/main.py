@@ -2,6 +2,7 @@ import datetime
 import enum
 import json
 import logging
+import math
 import random
 import re
 import string
@@ -50,7 +51,7 @@ class TvDatafeed:
             password (str, optional): tradingview password. Defaults to None.
         """
 
-        self.ws_debug = False
+        self.ws_debug = True
         if auth_token is not None:
             self.token = auth_token
         else:
@@ -137,38 +138,41 @@ class TvDatafeed:
     @staticmethod
     def __create_df(raw_data, symbol):
         try:
-            out = re.search('"s":\[(.+?)\}\]', raw_data).group(1)
-            x = out.split(',{"')
+            datasets = re.findall('"s":\[(.+?)\}\]', raw_data)
             data = list()
             volume_data = True
+            for dataset in datasets:
+                x = dataset.split(',{"')
 
-            for xi in x:
-                xi = re.split("\[|:|,|\]", xi)
-                ts = datetime.datetime.fromtimestamp(float(xi[4]))
 
-                row = [ts]
+                for xi in x:
+                    xi = re.split("\[|:|,|\]", xi)
+                    ts = datetime.datetime.fromtimestamp(float(xi[4]))
 
-                for i in range(5, 10):
+                    row = [ts]
 
-                    # skip converting volume data if does not exists
-                    if not volume_data and i == 9:
-                        row.append(0.0)
-                        continue
-                    try:
-                        row.append(float(xi[i]))
+                    for i in range(5, 10):
 
-                    except ValueError:
-                        volume_data = False
-                        row.append(0.0)
-                        logger.debug('no volume data')
+                        # skip converting volume data if does not exists
+                        if not volume_data and i == 9:
+                            row.append(0.0)
+                            continue
+                        try:
+                            row.append(float(xi[i]))
 
-                data.append(row)
+                        except ValueError:
+                            volume_data = False
+                            row.append(0.0)
+                            logger.debug('no volume data')
+
+                    data.append(row)
 
             data = pd.DataFrame(
                 data, columns=["datetime", "open",
                                "high", "low", "close", "volume"]
             ).set_index("datetime")
             data.insert(0, "symbol", value=symbol)
+            print('Data df unique', data.index.nunique())
             return data
         except AttributeError:
             logger.error("no data, please check the exchange and symbol")
@@ -214,6 +218,10 @@ class TvDatafeed:
         symbol = self.__format_symbol(
             symbol=symbol, exchange=exchange, contract=fut_contract
         )
+        data_bucket_size = 200
+
+        # We do -1 because we fetch a bucket size of data when loading serie.
+        request_more_data_count = math.ceil(n_bars/data_bucket_size-1)
 
         interval = interval.value
 
@@ -272,24 +280,32 @@ class TvDatafeed:
         )
         self.__send_message(
             "create_series",
-            [self.chart_session, "s1", "s1", "symbol_1", interval, n_bars],
+            [self.chart_session, "s1", "s1", "symbol_1", interval, data_bucket_size],
         )
         self.__send_message("switch_timezone", [
                             self.chart_session, "exchange"])
 
         raw_data = ""
-
         logger.debug(f"getting data for {symbol}...")
+
         while True:
             try:
                 result = self.ws.recv()
                 raw_data = raw_data + result + "\n"
+                logger.info(f'Data received :{result}')
+                if request_more_data_count <= 0:
+                    logger.info(f'Fetching data process completed for {symbol}')
+                    break
+                self.__send_message("request_more_data", [self.chart_session, "s1", data_bucket_size])
+                request_more_data_count -= 1
+
             except Exception as e:
                 logger.error(e)
                 break
 
-            if "series_completed" in result:
-                break
+            # if "series_completed" in result:
+            #     logger.info('Found serie completed')
+            #     break
 
         return self.__create_df(raw_data, symbol)
 
@@ -312,14 +328,12 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     tv = TvDatafeed()
 
-    print(tv.get_hist("XAUUSD", "OANDA", fut_contract=1))
-    print(tv.get_hist("NIFTY", "NSE", fut_contract=1))
     print(
         tv.get_hist(
             "XAUUSD",
             "OANDA",
             interval=Interval.in_daily,
-            n_bars=500,
+            n_bars=200,
             extended_session=False,
         )
     )
