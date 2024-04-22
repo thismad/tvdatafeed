@@ -1,17 +1,27 @@
 import datetime
 import enum
 import json
-import logging
 import math
+import os
 import random
 import re
 import string
+import time
+
 import pandas as pd
 from websocket import create_connection
+
 import requests
 import json
 
+import logging
+
 logger = logging.getLogger(__name__)
+logger.basicConfig = logging.basicConfig(level=logging.DEBUG)
+
+
+# websocket_logger = logging.getLogger('websocket')
+# websocket_logger.setLevel(logging.WARNING)
 
 
 class Interval(enum.Enum):
@@ -34,15 +44,15 @@ class Interval(enum.Enum):
 class TvDatafeed:
     __sign_in_url = 'https://www.tradingview.com/accounts/signin/'
     __search_url = 'https://symbol-search.tradingview.com/symbol_search/?text={}&hl=1&exchange={}&lang=en&type=&domain=production'
-    __ws_headers = json.dumps({"Origin": "https://data.tradingview.com"})
+    __ws_headers = json.dumps({"Origin": "https://fr.tradingview.com"})
     __signin_headers = {'Referer': 'https://www.tradingview.com'}
     __ws_timeout = 5
 
     def __init__(
-        self,
-        username: str = None,
-        password: str = None,
-        auth_token: str = None
+            self,
+            username: str = None,
+            password: str = None,
+            auth_token: str = None
     ) -> None:
         """Create TvDatafeed object
 
@@ -56,7 +66,6 @@ class TvDatafeed:
             self.token = auth_token
         else:
             self.token = self.__auth(username, password)
-
         if self.token is None:
             self.token = "unauthorized_user_token"
             logger.warning(
@@ -83,13 +92,12 @@ class TvDatafeed:
             except Exception as e:
                 logger.error('error while signin')
                 token = None
-
         return token
 
     def __create_connection(self):
-        logging.debug("creating websocket connection")
+        logger.debug("creating websocket connection")
         self.ws = create_connection(
-            "wss://data.tradingview.com/socket.io/websocket", headers=self.__ws_headers, timeout=self.__ws_timeout
+            "wss://prodata.tradingview.com/socket.io/websocket", headers=self.__ws_headers, timeout=self.__ws_timeout
         )
 
     @staticmethod
@@ -132,8 +140,24 @@ class TvDatafeed:
     def __send_message(self, func, args):
         m = self.__create_message(func, args)
         if self.ws_debug:
-            print(m)
+            logging.debug(f'Message sent: {m}')
         self.ws.send(m)
+
+    def __parse_messages(self, message):
+        # Pattern to find the message starts
+        pattern = r'(~m~\d+~m~)'
+
+        # Split the data at each found pattern, retaining the delimiter in the result
+        parts = re.split(pattern, message)
+
+        # The first element is usually an empty string if the data starts with the delimiter; remove it
+        if parts[0] == '':
+            parts = parts[1:]
+
+        # Combine the delimiters with the messages because the split removes them from the main text
+        messages = parts
+
+        return messages
 
     @staticmethod
     def __create_df(raw_data, symbol):
@@ -143,7 +167,6 @@ class TvDatafeed:
             volume_data = True
             for dataset in datasets:
                 x = dataset.split(',{"')
-
 
                 for xi in x:
                     xi = re.split("\[|:|,|\]", xi)
@@ -172,14 +195,14 @@ class TvDatafeed:
                                "high", "low", "close", "volume"]
             ).set_index("datetime")
             data.insert(0, "symbol", value=symbol)
-            print('Data df unique', data.index.nunique())
+            data = data[~data.index.duplicated(keep='first')]
+            logger.debug(f'Unique rows in df: {data.index.nunique()}')
             return data
         except AttributeError:
             logger.error("no data, please check the exchange and symbol")
 
     @staticmethod
     def __format_symbol(symbol, exchange, contract: int = None):
-
         if ":" in symbol:
             pass
         elif contract is None:
@@ -194,18 +217,17 @@ class TvDatafeed:
         return symbol
 
     def get_hist(
-        self,
-        symbol: str,
-        exchange: str = "NSE",
-        interval: Interval = Interval.in_daily,
-        n_bars: int = 10,
-        fut_contract: int = None,
-        extended_session: bool = False,
+            self,
+            symbol: str,
+            exchange: str = "NSE",
+            interval: Interval = Interval.in_daily,
+            n_bars: int = 10,
+            fut_contract: int = None,
+            extended_session: bool = False,
     ) -> pd.DataFrame:
         """get historical data
 
         Args:
-            symbol (str): symbol name
             exchange (str, optional): exchange, not required if symbol is in format EXCHANGE:SYMBOL. Defaults to None.
             interval (str, optional): chart interval. Defaults to 'D'.
             n_bars (int, optional): no of bars to download, max 5000. Defaults to 10.
@@ -215,18 +237,17 @@ class TvDatafeed:
         Returns:
             pd.Dataframe: dataframe with sohlcv as columns
         """
+        if n_bars <= 0:
+            raise ValueError('n_bars must be greater than 0')
         symbol = self.__format_symbol(
             symbol=symbol, exchange=exchange, contract=fut_contract
         )
-        data_bucket_size = 200
 
-        # We do -1 because we fetch a bucket size of data when loading serie.
-        request_more_data_count = math.ceil(n_bars/data_bucket_size-1)
-
+        data_bucket_size = 1000
+        remaining_data_size = n_bars
         interval = interval.value
 
         self.__create_connection()
-
         self.__send_message("set_auth_token", [self.token])
         self.__send_message("chart_create_session", [self.chart_session, ""])
         self.__send_message("quote_create_session", [self.session])
@@ -261,8 +282,7 @@ class TvDatafeed:
         )
 
         self.__send_message(
-            "quote_add_symbols", [self.session, symbol,
-                                  {"flags": ["force_permission"]}]
+            "quote_add_symbols", [self.session, symbol]
         )
         self.__send_message("quote_fast_symbols", [self.session, symbol])
 
@@ -270,7 +290,7 @@ class TvDatafeed:
             "resolve_symbol",
             [
                 self.chart_session,
-                "symbol_1",
+                "sds_sym_1",
                 '={"symbol":"'
                 + symbol
                 + '","adjustment":"splits","session":'
@@ -280,34 +300,60 @@ class TvDatafeed:
         )
         self.__send_message(
             "create_series",
-            [self.chart_session, "s1", "s1", "symbol_1", interval, data_bucket_size],
+            [self.chart_session, "sds_1", "s1", "sds_sym_1", interval, data_bucket_size, ""],
         )
         self.__send_message("switch_timezone", [
-                            self.chart_session, "exchange"])
+            self.chart_session, "exchange"])
 
-        raw_data = ""
-        logger.debug(f"getting data for {symbol}...")
-
+        df = pd.DataFrame()
+        logger.info(f"Getting data for {symbol}...")
+        max_bars = n_bars
+        series_completed = False
         while True:
             try:
                 result = self.ws.recv()
-                raw_data = raw_data + result + "\n"
-                logger.info(f'Data received :{result}')
-                if request_more_data_count <= 0:
-                    logger.info(f'Fetching data process completed for {symbol}')
+                messages = self.__parse_messages(result)
+                for message in messages:
+                    # Parse to dataframe messages containing price data
+                    if 'timescale_update' in message:
+                        df_temp = self.__create_df(message, symbol)
+                        if len(df_temp) > 0:
+                            df = pd.concat([df, df_temp])
+                            remaining_data_size = remaining_data_size - len(df_temp)
+
+                            # If we fetched all the data we need, we break the loop
+                            if remaining_data_size <= 0:
+                                series_completed = True
+                                # We need to trimm the excess data
+                                max_bars = n_bars
+                                break
+
+                    # Check if we reached the maximum available data
+                    elif '"data_completed":"end"' in message:
+                        logger.info('Reached the maximum available data')
+                        max_bars = len(df)
+                        series_completed = True
+                    # If its a ping, ping back
+                    elif re.match(r'~m~\d+~m~~h~\d+', message.strip()):
+                        logger.debug('Ping received')
+                        self.ws.send(message)
+                        logger.debug(f'Ping sent: {message}')
+                    else:
+                        logger.debug(f'Received message not containing price data {result}')
+
+                # If we fetched all the data we need or we reached max historical data, we break the loop
+                if series_completed:
+                    logger.info(f'Done for {symbol}')
                     break
-                self.__send_message("request_more_data", [self.chart_session, "s1", data_bucket_size])
-                request_more_data_count -= 1
+                logger.debug('Request more data')
+                self.__send_message("request_more_data", [self.chart_session, "sds_1", data_bucket_size])
 
             except Exception as e:
                 logger.error(e)
                 break
 
-            # if "series_completed" in result:
-            #     logger.info('Found serie completed')
-            #     break
-
-        return self.__create_df(raw_data, symbol)
+        # We return the filtered df with max_bars
+        return df.sort_index(ascending=False)[:max_bars]
 
     def search_symbol(self, text: str, exchange: str = ''):
         url = self.__search_url.format(text, exchange)
@@ -325,15 +371,15 @@ class TvDatafeed:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    from dotenv import load_dotenv
+    load_dotenv()
     tv = TvDatafeed()
-
     print(
         tv.get_hist(
-            "XAUUSD",
-            "OANDA",
-            interval=Interval.in_daily,
-            n_bars=200,
+            "XBTUSD.P",
+            "BITMEX",
+            interval=Interval.in_4_hour,
+            n_bars=6000,
             extended_session=False,
         )
     )
