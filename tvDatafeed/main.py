@@ -46,7 +46,7 @@ class TvDatafeed:
     __search_url = 'https://symbol-search.tradingview.com/symbol_search/?text={}&hl=1&exchange={}&lang=en&type=&domain=production'
     __ws_headers = json.dumps({"Origin": "https://fr.tradingview.com"})
     __signin_headers = {'Referer': 'https://www.tradingview.com'}
-    __ws_timeout = 5
+    __ws_timeout = 10
 
     def __init__(
             self,
@@ -330,8 +330,8 @@ class TvDatafeed:
 
                     # Check if we reached the maximum available data
                     elif '"data_completed":"end"' in message:
-                        logger.info('Reached the maximum available data')
                         max_bars = len(df)
+                        logger.info(f'Reached the maximum available data of {max_bars} bars')
                         series_completed = True
                     # If its a ping, ping back
                     elif re.match(r'~m~\d+~m~~h~\d+', message.strip()):
@@ -343,7 +343,7 @@ class TvDatafeed:
 
                 # If we fetched all the data we need or we reached max historical data, we break the loop
                 if series_completed:
-                    logger.info(f'Done for {symbol}')
+                    logger.info(f'Done for {symbol} with {max_bars} bars')
                     break
                 logger.debug('Request more data')
                 self.__send_message("request_more_data", [self.chart_session, "sds_1", data_bucket_size])
