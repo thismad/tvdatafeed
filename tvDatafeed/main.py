@@ -17,7 +17,7 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
-logger.basicConfig = logging.basicConfig(level=logging.DEBUG)
+logger.basicConfig = logging.basicConfig(level=logging.INFO)
 
 
 # websocket_logger = logging.getLogger('websocket')
