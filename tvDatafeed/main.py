@@ -87,7 +87,7 @@ class TvDatafeed:
     def __create_connection(self):
         logging.debug("creating websocket connection")
         self.ws = create_connection(
-            "wss://data.tradingview.com/socket.io/websocket", headers=self.__ws_headers, timeout=self.__ws_timeout
+            "wss://prodata.tradingview.com/socket.io/websocket", headers=self.__ws_headers, timeout=self.__ws_timeout
         )
 
     @staticmethod
@@ -251,10 +251,6 @@ class TvDatafeed:
             ],
         )
 
-        self.__send_message(
-            "quote_add_symbols", [self.session, symbol,
-                                  {"flags": ["force_permission"]}]
-        )
         self.__send_message("quote_fast_symbols", [self.session, symbol])
 
         self.__send_message(
@@ -283,6 +279,7 @@ class TvDatafeed:
             try:
                 result = self.ws.recv()
                 raw_data = raw_data + result + "\n"
+                logger.debug(result)
             except Exception as e:
                 logger.error(e)
                 break
@@ -311,7 +308,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     tv = TvDatafeed()
 
-    print(tv.get_hist("XAUUSD", "OANDA", fut_contract=1))
     print(tv.get_hist("NIFTY", "NSE", fut_contract=1))
     print(
         tv.get_hist(
