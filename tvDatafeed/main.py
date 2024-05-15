@@ -376,10 +376,10 @@ if __name__ == "__main__":
     tv = TvDatafeed()
     print(
         tv.get_hist(
-            "XBTUSD.P",
-            "BITMEX",
-            interval=Interval.in_4_hour,
-            n_bars=6000,
+            "BTCUSD.P",
+            "BYBIT",
+            interval=Interval.in_1_minute,
+            n_bars=15000,
             extended_session=False,
         )
     )
