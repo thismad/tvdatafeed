@@ -311,10 +311,10 @@ if __name__ == "__main__":
     print(tv.get_hist("NIFTY", "NSE", fut_contract=1))
     print(
         tv.get_hist(
-            "XAUUSD",
-            "OANDA",
-            interval=Interval.in_daily,
-            n_bars=500,
+            "BTCUSD.P",
+            "BYBIT",
+            interval=Interval.in_1_minute,
+            n_bars=15000,
             extended_session=False,
         )
     )
