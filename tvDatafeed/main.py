@@ -17,7 +17,7 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
-logger.basicConfig = logging.basicConfig(level=logging.INFO)
+logger.basicConfig = logging.basicConfig(level=logging.DEBUG)
 
 
 # websocket_logger = logging.getLogger('websocket')
@@ -99,6 +99,8 @@ class TvDatafeed:
         self.ws = create_connection(
             "wss://prodata.tradingview.com/socket.io/websocket", headers=self.__ws_headers, timeout=self.__ws_timeout
         )
+        # Consume first message which is session id 
+        self.ws.recv()
 
     @staticmethod
     def __filter_raw_message(text):
@@ -156,7 +158,6 @@ class TvDatafeed:
 
         # Combine the delimiters with the messages because the split removes them from the main text
         messages = parts
-
         return messages
 
     @staticmethod
@@ -339,7 +340,7 @@ class TvDatafeed:
                         self.ws.send(message)
                         logger.debug(f'Ping sent: {message}')
                     else:
-                        logger.debug(f'Received message not containing price data {result}')
+                        logger.debug(f'Received message not containing price data {message}')
 
                 # If we fetched all the data we need or we reached max historical data, we break the loop
                 if series_completed:
@@ -373,13 +374,15 @@ class TvDatafeed:
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
-    tv = TvDatafeed()
+    username = os.environ.get('TV_USERNAME')
+    password = os.environ.get('TV_PASSWORD')
+    auth_token = os.environ.get('TV_AUTH_TOKEN')
+    tv = TvDatafeed(username, password, auth_token)
     print(
         tv.get_hist(
             "XBTUSD.P",
             "BITMEX",
             interval=Interval.in_4_hour,
             n_bars=6000,
-            extended_session=False,
         )
     )
